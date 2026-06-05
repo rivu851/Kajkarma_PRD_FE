@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KajKarma IBM Frontend
 
-## Getting Started
+Internal Business Management Tool — enterprise Next.js frontend for the KajKarma BMT backend.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router)
+- TypeScript, Tailwind CSS, shadcn/ui
+- TanStack Query, Axios, Zustand
+- React Hook Form, Zod, Recharts, Sonner
+
+## Setup
+
+```bash
+cd kajkarma-ibm-frontend
+npm install
+```
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api/v1
+```
+
+Start backend on port 5000, then:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Default seed admin (if backend freshly seeded):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Email: `admin@kajkarma.com`
+- Password: `Admin@123456`
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+All API contracts are derived from backend documentation (`PRD ENTIRE BACKEND.txt`). No invented endpoints.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Auth**: `POST /auth/login`, `POST /auth/logout`, `POST /auth/refresh`, `GET /auth/me`
+- **Permissions**: from `user.role.permissions` or `GET /users/:id/permissions`
+- **Modules**: dashboard, leads, clients, projects, employees, worklogs, revenue, payments, salaries, reimbursements, subscriptions, reports, reminders, users, roles, communications
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Features
 
-## Deploy on Vercel
+- Role-based sidebar and `PermissionGate` component
+- Record-level scoping enforced by backend (frontend does not expose restricted modules)
+- Dashboard (read-only) with role-specific metrics from `GET /dashboard/overview`
+- Global search (Ctrl+K) across leads, clients, projects, employees
+- Reminder bell dropdown + dashboard due-reminder toasts
+- Dark/light mode
+- Responsive layout with mobile sidebar drawer
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Not implemented (no backend API)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Lead CSV upload
+- Login audit / login details management
+- Forecasting module UI (permission exists; no documented endpoints)
+- Dedicated file upload storage (reports use `file_url` from backend)

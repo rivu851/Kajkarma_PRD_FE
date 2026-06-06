@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { clientsApi } from "@/services/api/clients.api";
+import { rolesApi } from "@/services/api/roles.api";
 import { getApiErrorMessage } from "@/services/api/axios";
 import type { Client } from "@/types/client.types";
 import { CLIENT_STATUSES } from "@/constants/enums";
@@ -52,6 +53,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const params = {
@@ -109,11 +111,23 @@ export default function ClientsPage() {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <PermissionGate module="clients" action="delete">
-            <Button size="sm" variant="ghost" onClick={() => setDeleteId(row.original._id)}>
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-1">
+            <PermissionGate module="clients" action="update">
+              <Button
+                size="sm"
+                variant="ghost"
+                title="Edit client"
+                onClick={() => { setEditingClient(row.original); setFormOpen(true); }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </PermissionGate>
+            <PermissionGate module="clients" action="delete">
+              <Button size="sm" variant="ghost" title="Delete client" onClick={() => setDeleteId(row.original._id)}>
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </PermissionGate>
+          </div>
         ),
       },
     ],
@@ -165,7 +179,11 @@ export default function ClientsPage() {
         />
       </div>
 
-      <ClientFormDialog open={formOpen} onOpenChange={setFormOpen} />
+      <ClientFormDialog
+        open={formOpen}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) setEditingClient(undefined); }}
+        client={editingClient}
+      />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
@@ -188,42 +206,103 @@ export default function ClientsPage() {
   );
 }
 
-function ClientFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function ClientFormDialog({
+  open,
+  onOpenChange,
+  client,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  client?: Client;
+}) {
+  const isEdit = !!client;
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({
+
+  const emptyForm = {
     company_name: "",
     contact_person_name: "",
     email: "",
     phone_number: "",
+    website_link: "",
     sector: "",
+    address: "",
     status: "active" as Client["status"],
     notes: "",
+  };
+
+  const [form, setForm] = useState(emptyForm);
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [assignedManagerId, setAssignedManagerId] = useState("");
+
+  // Populate form when editing
+  useEffect(() => {
+    if (open && client) {
+      setForm({
+        company_name: client.company_name,
+        contact_person_name: client.contact_person_name,
+        email: client.email ?? "",
+        phone_number: client.phone_number ?? "",
+        website_link: client.website_link ?? "",
+        sector: client.sector ?? "",
+        address: client.address ?? "",
+        status: client.status,
+        notes: client.notes ?? "",
+      });
+      setAssignedManagerId(client.assigned_manager_id ?? "");
+    } else if (open && !client) {
+      setForm(emptyForm);
+      setSelectedRoleId("");
+      setAssignedManagerId("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, client?._id]);
+
+  const { data: rolesData } = useQuery({
+    queryKey: ["roles"],
+    queryFn: rolesApi.getAll,
+    enabled: open,
   });
 
+  const { data: roleUsersData } = useQuery({
+    queryKey: ["roles", selectedRoleId, "users"],
+    queryFn: () => rolesApi.getUsers(selectedRoleId),
+    enabled: !!selectedRoleId,
+  });
+
+  const reset = () => {
+    setForm(emptyForm);
+    setSelectedRoleId("");
+    setAssignedManagerId("");
+  };
+
+  const payload = {
+    company_name: form.company_name,
+    contact_person_name: form.contact_person_name,
+    email: form.email || undefined,
+    phone_number: form.phone_number || undefined,
+    website_link: form.website_link || undefined,
+    sector: form.sector || undefined,
+    address: form.address || undefined,
+    status: form.status,
+    notes: form.notes || undefined,
+    assigned_manager_id: assignedManagerId || undefined,
+  };
+
   const mutation = useMutation({
-    mutationFn: () =>
-      clientsApi.create({
-        company_name: form.company_name,
-        contact_person_name: form.contact_person_name,
-        email: form.email || undefined,
-        phone_number: form.phone_number || undefined,
-        sector: form.sector || undefined,
-        status: form.status,
-        notes: form.notes || undefined,
-      }),
+    mutationFn: () => isEdit ? clientsApi.update(client!._id, payload) : clientsApi.create(payload),
     onSuccess: () => {
-      toast.success("Client created");
+      toast.success(isEdit ? "Client updated" : "Client created");
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+      reset();
       onOpenChange(false);
-      setForm({ company_name: "", contact_person_name: "", email: "", phone_number: "", sector: "", status: "active", notes: "" });
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader><DialogTitle>Create Client</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? "Edit Client" : "Create Client"}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Company Name *</Label>
@@ -242,10 +321,22 @@ function ClientFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               <Label>Phone</Label>
               <Input value={form.phone_number} onChange={(e) => setForm({ ...form, phone_number: e.target.value })} />
             </div>
+            <div className="space-y-2">
+              <Label>Website</Label>
+              <Input value={form.website_link} onChange={(e) => setForm({ ...form, website_link: e.target.value })} placeholder="https://" />
+            </div>
+            <div className="space-y-2">
+              <Label>Sector</Label>
+              <Input value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Address</Label>
+            <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label>Status</Label>
-            <Select value={form.status} onValueChange={(v) => v && setForm({ ...form, status: v as Client["status"] })}>
+            <Select value={form.status} onValueChange={(v: string | null) => v && setForm({ ...form, status: v as Client["status"] })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CLIENT_STATUSES.map((s) => (
@@ -253,6 +344,36 @@ function ClientFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Assign Manager</Label>
+            <div className="flex gap-2">
+              <Select value={selectedRoleId} onValueChange={(v: string | null) => { setSelectedRoleId(v ?? ""); setAssignedManagerId(""); }}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rolesData?.map((r) => (
+                    <SelectItem key={r._id} value={r._id}>{formatLabel(r.name)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedRoleId && (
+                <Select value={assignedManagerId} onValueChange={(v: string | null) => setAssignedManagerId(v ?? "")}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="User" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {!roleUsersData?.length && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No users</div>
+                    )}
+                    {roleUsersData?.map((u) => (
+                      <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Notes</Label>
@@ -263,7 +384,9 @@ function ClientFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             disabled={!form.company_name || !form.contact_person_name || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? "Creating..." : "Create Client"}
+            {mutation.isPending
+              ? isEdit ? "Saving..." : "Creating..."
+              : isEdit ? "Save Changes" : "Create Client"}
           </Button>
         </div>
       </DialogContent>

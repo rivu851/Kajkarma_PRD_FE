@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { worklogsApi, type Worklog } from "@/services/api/worklogs.api";
+import { worklogsApi, type Worklog, type CreateWorklogPayload } from "@/services/api/worklogs.api";
 import { projectsApi } from "@/services/api/projects.api";
 import { getApiErrorMessage } from "@/services/api/axios";
 import { WORK_STATUSES } from "@/constants/enums";
@@ -49,6 +49,7 @@ export default function WorklogsPage() {
   const [page, setPage] = useState(1);
   const [workStatus, setWorkStatus] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
+  const [editingWorklog, setEditingWorklog] = useState<Worklog | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const params = {
@@ -103,11 +104,18 @@ export default function WorklogsPage() {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <PermissionGate module="worklogs" action="delete">
-            <Button size="sm" variant="ghost" onClick={() => setDeleteId(row.original._id)}>
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          </PermissionGate>
+          <div className="flex gap-1">
+            <PermissionGate module="worklogs" action="update">
+              <Button size="sm" variant="ghost" onClick={() => setEditingWorklog(row.original)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </PermissionGate>
+            <PermissionGate module="worklogs" action="delete">
+              <Button size="sm" variant="ghost" onClick={() => setDeleteId(row.original._id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </PermissionGate>
+          </div>
         ),
       },
     ],
@@ -150,6 +158,11 @@ export default function WorklogsPage() {
       </div>
 
       <WorklogFormDialog open={formOpen} onOpenChange={setFormOpen} />
+      <WorklogFormDialog
+        open={!!editingWorklog}
+        onOpenChange={(o) => !o && setEditingWorklog(undefined)}
+        worklog={editingWorklog}
+      />
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
@@ -169,8 +182,16 @@ export default function WorklogsPage() {
   );
 }
 
-function WorklogFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+interface WorklogFormDialogProps {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  worklog?: Worklog;
+}
+
+function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogProps) {
   const queryClient = useQueryClient();
+  const isEdit = !!worklog;
+
   const [form, setForm] = useState({
     project_id: "",
     date: "",
@@ -187,9 +208,25 @@ function WorklogFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     enabled: open,
   });
 
+  useEffect(() => {
+    if (open && worklog) {
+      setForm({
+        project_id: worklog.project_id ?? "",
+        date: worklog.date ? worklog.date.slice(0, 10) : "",
+        task_title: worklog.task_title ?? "",
+        task_description: worklog.task_description ?? "",
+        time_spent_hours: worklog.time_spent_hours != null ? String(worklog.time_spent_hours) : "",
+        work_status: worklog.work_status ?? "in_progress",
+        remarks: worklog.remarks ?? "",
+      });
+    } else if (!open) {
+      setForm({ project_id: "", date: "", task_title: "", task_description: "", time_spent_hours: "", work_status: "in_progress", remarks: "" });
+    }
+  }, [open, worklog]);
+
   const mutation = useMutation({
-    mutationFn: () =>
-      worklogsApi.create({
+    mutationFn: () => {
+      const payload: Partial<CreateWorklogPayload> = {
         project_id: form.project_id,
         date: form.date,
         task_title: form.task_title,
@@ -197,19 +234,26 @@ function WorklogFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         time_spent_hours: Number(form.time_spent_hours),
         work_status: form.work_status,
         remarks: form.remarks || undefined,
-      }),
+      };
+      if (isEdit) return worklogsApi.update(worklog._id, payload);
+      return worklogsApi.create(payload as CreateWorklogPayload);
+    },
     onSuccess: () => {
-      toast.success("Worklog created");
+      toast.success(isEdit ? "Worklog updated" : "Worklog created");
       queryClient.invalidateQueries({ queryKey: ["worklogs"] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
+  const canSubmit = !!form.project_id && !!form.date && !!form.task_title && !!form.time_spent_hours;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader><DialogTitle>Create Worklog</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit Worklog" : "Create Worklog"}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Project *</Label>
@@ -249,12 +293,18 @@ function WorklogFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <Label>Description</Label>
             <Textarea value={form.task_description} onChange={(e) => setForm({ ...form, task_description: e.target.value })} />
           </div>
+          <div className="space-y-2">
+            <Label>Remarks</Label>
+            <Input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
+          </div>
           <Button
             className="w-full"
-            disabled={!form.project_id || !form.date || !form.task_title || !form.time_spent_hours || mutation.isPending}
+            disabled={!canSubmit || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? "Creating..." : "Create Worklog"}
+            {mutation.isPending
+              ? (isEdit ? "Saving..." : "Creating...")
+              : (isEdit ? "Save Changes" : "Create Worklog")}
           </Button>
         </div>
       </DialogContent>

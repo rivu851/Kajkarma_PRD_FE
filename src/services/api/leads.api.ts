@@ -14,8 +14,7 @@ const asRecord = (value: unknown) => value as Record<string, unknown>;
 export const leadsApi = {
   getAll: async (params?: LeadQueryParams) => {
     const { data } = await apiClient.get<ApiResponse<PaginatedData<Lead>>>(
-      "/leads",
-      { params }
+      "/leads"
     );
     return normalizePaginated(data.data, normalizeLead);
   },

@@ -56,10 +56,10 @@ async function resolvePermissions(user: AuthUser): Promise<EffectivePermissions>
 export function useAuthInit() {
   const setUser = useAuthStore((s) => s.setUser);
   const setPermissions = usePermissionStore((s) => s.setPermissions);
-  const [hasToken, setHasToken] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setHasToken(Boolean(localStorage.getItem("accessToken")));
+    setMounted(true);
   }, []);
 
   return useQuery({
@@ -75,7 +75,7 @@ export function useAuthInit() {
       setPermissions(permissions, user.roleName);
       return normalizedUser;
     },
-    enabled: hasToken,
+    enabled: mounted,
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
@@ -90,8 +90,7 @@ export function useLogin() {
   return useMutation({
     mutationFn: (payload: LoginPayload) => authApi.login(payload),
     onSuccess: async (data) => {
-      setStoredTokens(data.accessToken, data.refreshToken);
-      document.cookie = `accessToken=${data.accessToken}; path=/; max-age=900; SameSite=Lax`;
+      setStoredTokens(data.accessToken);
 
       const user = normalizeAuthUser(data.user as RawAuthUser);
       const permissions = await resolvePermissions(user);
@@ -121,7 +120,6 @@ export function useLogout() {
     mutationFn: () => authApi.logout(),
     onSettled: () => {
       clearStoredTokens();
-      document.cookie = "accessToken=; path=/; max-age=0";
       clearAuth();
       clearPermissions();
       queryClient.clear();

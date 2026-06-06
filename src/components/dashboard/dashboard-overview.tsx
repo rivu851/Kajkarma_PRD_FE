@@ -384,8 +384,8 @@ export function DashboardOverview() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.employeeProductivity.map((row) => (
-                      <tr key={row.employeeId} className="border-b last:border-0">
+                    {data.employeeProductivity.map((row, i) => (
+                      <tr key={`${row.employeeId}-${i}`} className="border-b last:border-0">
                         <td className="py-2 pr-4 font-medium">{row.employeeName}</td>
                         <td className="py-2 pr-4">{row.tasksCompleted}</td>
                         <td className="py-2 pr-4">{row.tasksInProgress}</td>
@@ -438,9 +438,9 @@ export function DashboardOverview() {
               </Link>
             </CardHeader>
             <CardContent className="space-y-3">
-              {data.recentReminders.map((reminder) => (
+              {data.recentReminders.map((reminder, i) => (
                 <div
-                  key={reminder.reminderId ?? `${reminder.type}-${reminder.recordId}`}
+                  key={`${reminder.reminderId ?? reminder.recordId}-${i}`}
                   className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-3"
                 >
                   <div>

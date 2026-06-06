@@ -9,6 +9,7 @@ import {
   hasEffectivePermissions,
   parseEffectivePermissions,
 } from "@/utils/auth-user";
+import { hasStoredTokens } from "@/services/api/axios";
 import type { ModuleName, PermissionAction, SystemRoleName } from "@/types/role.types";
 
 function useEffectiveAccess() {
@@ -60,8 +61,7 @@ export function usePermissionsReady() {
   if (roleName === "super_admin") return true;
   if (hasEffectivePermissions(permissions)) return true;
 
-  const tokenExists =
-    typeof window !== "undefined" && Boolean(localStorage.getItem("accessToken"));
+  const tokenExists = hasStoredTokens();
 
   if (!tokenExists) return true;
   if (isFetching || isLoading) return false;

@@ -42,6 +42,17 @@ export interface CreateProjectPayload {
   notes?: string;
 }
 
+export interface UpdateProjectPayload {
+  project_name?: string;
+  category?: ProjectCategory;
+  start_date?: string | null;
+  end_date?: string | null;
+  priority?: ProjectPriority;
+  assigned_employees?: string[];
+  payment_status?: ProjectPaymentStatus;
+  notes?: string;
+}
+
 export interface ProjectQueryParams {
   page?: number;
   limit?: number;

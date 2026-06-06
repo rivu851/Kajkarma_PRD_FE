@@ -25,6 +25,12 @@ export interface Employee {
   updatedAt?: string;
 }
 
+export interface CreateUserAccountPayload {
+  email: string;
+  password: string;
+  role_id: string;
+}
+
 export interface CreateEmployeePayload {
   user_id?: string;
   full_name: string;
@@ -43,6 +49,7 @@ export interface CreateEmployeePayload {
   ifsc_code?: string;
   branch_name?: string;
   upi_id?: string;
+  create_user_account?: CreateUserAccountPayload;
 }
 
 export interface EmployeeQueryParams {

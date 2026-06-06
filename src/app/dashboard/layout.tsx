@@ -5,18 +5,27 @@ import { useEffect } from "react";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { useAuthStore } from "@/store/auth.store";
+import { usePermissionStore } from "@/store/permission.store";
+import { useAuthInit } from "@/hooks/use-auth";
 import { ROUTES } from "@/constants/routes";
 
 function DashboardAuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const clearPermissions = usePermissionStore((s) => s.clearPermissions);
+  const { isError, isFetched } = useAuthInit();
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-    if (!token && !isAuthenticated) {
+    // Only redirect once the auth check has settled and definitively failed.
+    // This allows the refresh interceptor to run first when the access token
+    // is expired but a valid HttpOnly refresh token cookie is present.
+    if (isFetched && isError && !isAuthenticated) {
+      clearAuth();
+      clearPermissions();
       router.replace(ROUTES.login);
     }
-  }, [isAuthenticated, router]);
+  }, [isFetched, isError, isAuthenticated, clearAuth, clearPermissions, router]);
 
   return <>{children}</>;
 }

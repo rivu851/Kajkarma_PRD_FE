@@ -213,7 +213,7 @@ export default function RemindersPage() {
             <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
-              {REMINDER_STATUSES.map((s) => (
+              {REMINDER_STATUSES.filter((s) => s !== "cancelled").map((s) => (
                 <SelectItem key={s} value={s}>{formatLabel(s)}</SelectItem>
               ))}
             </SelectContent>
@@ -222,7 +222,7 @@ export default function RemindersPage() {
 
         <DataTable
           columns={columns}
-          data={data?.data ?? []}
+          data={(data?.data ?? []).filter((r) => r.status !== "cancelled")}
           isLoading={isLoading}
           searchValue={search}
           onSearchChange={(v) => { setSearch(v); setPage(1); }}

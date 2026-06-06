@@ -11,47 +11,143 @@ export const apiClient = axios.create({
   withCredentials: true,
 });
 
+// ─── Cookie helpers ────────────────────────────────────────────────────────────
+
+const AUTH_COOKIE_OPTIONS = "path=/; SameSite=Lax";
+
+function readCookie(name: string) {
+  if (typeof document === "undefined") return null;
+  const cookie = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${name}=`));
+  if (!cookie) return null;
+  return decodeURIComponent(cookie.slice(name.length + 1));
+}
+
+function writeCookie(name: string, value: string, maxAge?: number) {
+  if (typeof document === "undefined") return;
+  const parts = [`${name}=${encodeURIComponent(value)}`, AUTH_COOKIE_OPTIONS];
+  if (typeof maxAge === "number") parts.splice(1, 0, `max-age=${maxAge}`);
+  document.cookie = parts.join("; ");
+}
+
+function clearCookie(name: string) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; ${AUTH_COOKIE_OPTIONS}; max-age=0`;
+}
+
+// ─── Token helpers ─────────────────────────────────────────────────────────────
+
+function getStoredTokens() {
+  if (typeof document === "undefined") return { accessToken: null };
+  return { accessToken: readCookie("accessToken") };
+}
+
+// sessionActive persists for the lifetime of the refresh token so that
+// hasStoredTokens() returns true even after the short-lived accessToken expires.
+export function setStoredTokens(accessToken: string) {
+  writeCookie("accessToken", accessToken, 15 * 60);
+  writeCookie("sessionActive", "1", 7 * 24 * 60 * 60);
+}
+
+export function clearStoredTokens() {
+  clearCookie("accessToken");
+  clearCookie("sessionActive");
+}
+
+export function hasStoredTokens() {
+  if (typeof document === "undefined") return false;
+  return Boolean(readCookie("accessToken") || readCookie("sessionActive"));
+}
+
+// ─── Refresh mutex ─────────────────────────────────────────────────────────────
+
 let isRefreshing = false;
 let refreshQueue: Array<{
   resolve: (token: string) => void;
   reject: (error: unknown) => void;
 }> = [];
 
-function getStoredTokens() {
-  if (typeof window === "undefined") return { accessToken: null, refreshToken: null };
-  return {
-    accessToken: localStorage.getItem("accessToken"),
-    refreshToken: localStorage.getItem("refreshToken"),
-  };
-}
-
-export function setStoredTokens(accessToken: string, refreshToken: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("accessToken", accessToken);
-  localStorage.setItem("refreshToken", refreshToken);
-}
-
-export function clearStoredTokens() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem("accessToken");
-  localStorage.removeItem("refreshToken");
-}
-
-function processQueue(error: unknown, token: string | null = null) {
-  refreshQueue.forEach((promise) => {
-    if (error) promise.reject(error);
-    else if (token) promise.resolve(token);
+function flushQueue(error: unknown, token: string | null) {
+  refreshQueue.forEach((p) => {
+    if (error) p.reject(error);
+    else if (token) p.resolve(token);
   });
   refreshQueue = [];
 }
 
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+// Fires POST /auth/refresh. Multiple concurrent callers share a single in-flight
+// request via the queue so the server only sees one refresh per expiry cycle.
+async function acquireNewToken(): Promise<string> {
+  if (isRefreshing) {
+    return new Promise((resolve, reject) => {
+      refreshQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+  try {
+    const { data: body } = await axios.post<{
+      success: boolean;
+      message: string;
+      data: RefreshResponse;
+    }>(
+      `${API_BASE_URL}/auth/refresh`,
+      {},
+      { withCredentials: true, headers: { "Content-Type": "application/json" } }
+    );
+    const newAccess = body.data?.accessToken;
+    if (!newAccess) throw new Error("No access token in refresh response");
+    setStoredTokens(newAccess);
+    flushQueue(null, newAccess);
+    return newAccess;
+  } catch (err) {
+    flushQueue(err, null);
+    throw err;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+function redirectToLogin() {
+  if (typeof window !== "undefined") window.location.href = "/login";
+}
+
+// ─── Request interceptor ───────────────────────────────────────────────────────
+// If no accessToken cookie is present, proactively refreshes before the request
+// goes out. Redirects to /login and rejects the request on refresh failure.
+
+apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  if (
+    config.url?.includes("/auth/login") ||
+    config.url?.includes("/auth/refresh")
+  ) {
+    return config;
+  }
+
   const { accessToken } = getStoredTokens();
+
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
+    return config;
   }
+
+  // No access token — attempt refresh before allowing the request through.
+  try {
+    const token = await acquireNewToken();
+    config.headers.Authorization = `Bearer ${token}`;
+  } catch {
+    clearStoredTokens();
+    redirectToLogin();
+    return Promise.reject(new Error("Session expired. Please log in again."));
+  }
+
   return config;
 });
+
+// ─── Response interceptor ─────────────────────────────────────────────────────
+// Handles 401s that slip through (token valid at request time but revoked
+// server-side). Uses the same acquireNewToken mutex so refresh never fires twice.
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -67,45 +163,16 @@ apiClient.interceptors.response.use(
       !originalRequest.url?.includes("/auth/login") &&
       !originalRequest.url?.includes("/auth/refresh")
     ) {
-      const { refreshToken } = getStoredTokens();
-      if (!refreshToken) {
-        clearStoredTokens();
-        if (typeof window !== "undefined") window.location.href = "/login";
-        return Promise.reject(error);
-      }
-
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          refreshQueue.push({
-            resolve: (token: string) => {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-              resolve(apiClient(originalRequest));
-            },
-            reject,
-          });
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
 
       try {
-        const { data } = await axios.post<{ data: RefreshResponse }>(
-          `${API_BASE_URL}/auth/refresh`,
-          { refreshToken }
-        );
-        const { accessToken: newAccess, refreshToken: newRefresh } = data.data;
-        setStoredTokens(newAccess, newRefresh);
-        processQueue(null, newAccess);
-        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        const token = await acquireNewToken();
+        originalRequest.headers.Authorization = `Bearer ${token}`;
         return apiClient(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
+      } catch {
         clearStoredTokens();
-        if (typeof window !== "undefined") window.location.href = "/login";
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
+        redirectToLogin();
+        return Promise.reject(error);
       }
     }
 
@@ -113,7 +180,12 @@ apiClient.interceptors.response.use(
   }
 );
 
-export function getApiErrorMessage(error: unknown, fallback = "Something went wrong"): string {
+// ─── Error helper ──────────────────────────────────────────────────────────────
+
+export function getApiErrorMessage(
+  error: unknown,
+  fallback = "Something went wrong"
+): string {
   if (axios.isAxiosError<ApiErrorResponse>(error)) {
     return error.response?.data?.message ?? error.message ?? fallback;
   }

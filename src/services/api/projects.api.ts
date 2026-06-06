@@ -3,6 +3,7 @@ import { normalizePaginated, normalizeProject } from "@/utils/api-normalize";
 import type { ApiResponse, PaginatedData } from "@/types/api.types";
 import type {
   CreateProjectPayload,
+  UpdateProjectPayload,
   Project,
   ProjectQueryParams,
   ProjectStatus,
@@ -26,7 +27,7 @@ export const projectsApi = {
     const { data } = await apiClient.post<ApiResponse<Project>>("/projects", payload);
     return normalizeProject(asRecord(data.data));
   },
-  update: async (id: string, payload: Partial<CreateProjectPayload>) => {
+  update: async (id: string, payload: UpdateProjectPayload) => {
     const { data } = await apiClient.patch<ApiResponse<Project>>(
       `/projects/${id}`,
       payload

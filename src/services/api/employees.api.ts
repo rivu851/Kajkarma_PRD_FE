@@ -13,7 +13,6 @@ export const employeesApi = {
   getAll: async (params?: EmployeeQueryParams) => {
     const { data } = await apiClient.get<ApiResponse<PaginatedData<Employee>>>(
       "/employees",
-      { params }
     );
     return normalizePaginated(data.data, normalizeEmployee) as unknown as PaginatedData<Employee>;
   },

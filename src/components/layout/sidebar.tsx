@@ -1,70 +1,56 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { SIDEBAR_ITEMS } from "@/constants/sidebar";
-import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/store/ui.store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { AppLogo } from "@/components/layout/app-logo";
+import { SidebarNav } from "@/components/layout/sidebar-nav";
 
 export function Sidebar() {
-  const pathname = usePathname();
-  const { canRead } = usePermissions();
-  const { sidebarCollapsed, toggleSidebar } = useUiStore();
-
-  const visibleItems = SIDEBAR_ITEMS.filter((item) => canRead(item.module));
+  const { sidebarCollapsed, sidebarHidden, toggleSidebar } = useUiStore();
 
   return (
     <aside
       className={cn(
-        "hidden h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 lg:sticky lg:top-0 lg:flex",
-        sidebarCollapsed ? "w-[76px]" : "w-[250px]"
+        "hidden h-screen shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width,transform,opacity] duration-300 ease-in-out lg:sticky lg:top-0 lg:flex",
+        sidebarHidden ? "w-0 -translate-x-2 border-r-0 opacity-0" : sidebarCollapsed ? "w-[72px]" : "w-[260px]"
       )}
     >
-      <div className="p-4">
-        <AppLogo collapsed={sidebarCollapsed} />
-      </div>
-
-      <div className="flex items-center justify-end px-3 pb-2">
+      <div
+        className={cn(
+          "flex items-center gap-2 border-b border-sidebar-border",
+          sidebarCollapsed ? "flex-col px-2 py-3" : "p-3"
+        )}
+      >
+        <AppLogo
+          collapsed={sidebarCollapsed}
+          className={cn(
+            "min-w-0 flex-1 border-0 shadow-none",
+            sidebarCollapsed && "w-full justify-center p-1.5"
+          )}
+        />
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+          className="shrink-0 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
           onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {sidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {sidebarCollapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 px-3 pb-4">
-        <nav className="space-y-0.5">
-          {visibleItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                  active
-                    ? "bg-primary font-medium text-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  sidebarCollapsed && "justify-center px-2"
-                )}
-                title={sidebarCollapsed ? item.title : undefined}
-              >
-                <Icon className="h-4 w-4 shrink-0 opacity-90" />
-                {!sidebarCollapsed && <span>{item.title}</span>}
-              </Link>
-            );
-          })}
-        </nav>
-      </ScrollArea>
+      <div className="min-h-0 flex-1">
+        <ScrollArea className="h-full min-w-[72px] px-2 pb-8 pt-2">
+          <SidebarNav collapsed={sidebarCollapsed} className="pr-1" />
+        </ScrollArea>
+      </div>
     </aside>
   );
 }

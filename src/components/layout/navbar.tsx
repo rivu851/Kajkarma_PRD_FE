@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  PanelLeft,
   Search,
   Sun,
   User,
@@ -17,7 +18,6 @@ import { useAuthStore } from "@/store/auth.store";
 import { useNotificationStore } from "@/store/notification.store";
 import { useUiStore } from "@/store/ui.store";
 import { useLogout } from "@/hooks/use-auth";
-import { ROUTES } from "@/constants/routes";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,13 +30,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/layout/command-palette";
-import { LogoMark } from "@/components/layout/logo-mark";
-import Link from "next/link";
 
 export function Navbar() {
   const user = useAuthStore((s) => s.user);
   const { resolvedTheme, setTheme } = useTheme();
-  const { setMobileSidebarOpen, setCommandPaletteOpen } = useUiStore();
+  const {
+    sidebarHidden,
+    setMobileSidebarOpen,
+    setCommandPaletteOpen,
+    toggleSidebarHidden,
+    setSidebarHidden,
+  } = useUiStore();
   const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const logout = useLogout();
 
@@ -68,25 +72,37 @@ export function Navbar() {
     .slice(0, 2)
     .toUpperCase();
 
+  const handleNavToggle = () => {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      if (sidebarHidden) {
+        setSidebarHidden(false);
+      } else {
+        toggleSidebarHidden();
+      }
+      return;
+    }
+    setMobileSidebarOpen(true);
+  };
+
   return (
     <>
-      <header className="top-header sticky top-0 z-40 flex h-14 items-center gap-3 px-4 md:px-6">
+      <header className="top-header sticky top-0 z-40 flex h-14 items-center gap-2 px-4 font-sans md:gap-3 md:px-6">
         <Button
           variant="ghost"
           size="icon-sm"
-          className="lg:hidden"
-          onClick={() => setMobileSidebarOpen(true)}
+          className="shrink-0"
+          onClick={handleNavToggle}
+          aria-label="Open navigation"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-5 w-5 lg:hidden" />
+          <PanelLeft className="hidden h-5 w-5 lg:block" />
         </Button>
 
-        <Link
-          href={ROUTES.dashboard}
-          className="flex items-center gap-2 rounded-lg border border-primary/10 bg-primary/5 px-2 py-1 transition-colors hover:bg-primary/10 lg:px-2.5 lg:py-1.5"
-        >
-          <LogoMark size={28} />
-          <span className="hidden text-sm font-semibold text-foreground sm:inline">KajKarma</span>
-        </Link>
+        {sidebarHidden ? (
+          <span className="hidden text-sm font-semibold text-foreground lg:inline">
+            KajKarma IBM
+          </span>
+        ) : null}
 
         <Button
           variant="outline"
@@ -127,7 +143,7 @@ export function Navbar() {
             </Avatar>
             <span className="hidden text-sm font-medium md:inline">{user?.name}</span>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-56 font-sans">
             <DropdownMenuGroup>
               <DropdownMenuLabel>
                 <div className="font-medium">{user?.name}</div>

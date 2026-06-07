@@ -47,6 +47,21 @@ const CHART_COLORS = [
   "var(--chart-1)",
 ];
 
+const CHART_ANIMATION = {
+  isAnimationActive: true,
+  animationDuration: 900,
+  animationBegin: 0,
+  animationEasing: "ease-out" as const,
+};
+
+const PIE_LABEL = ({
+  name,
+  percent,
+}: {
+  name?: string;
+  percent?: number;
+}) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`;
+
 const SEVERITY_VARIANT: Record<string, "destructive" | "secondary" | "outline"> = {
   critical: "destructive",
   high: "destructive",
@@ -281,7 +296,12 @@ export function DashboardOverview() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="value"
+                    fill="var(--chart-1)"
+                    radius={[4, 4, 0, 0]}
+                    {...CHART_ANIMATION}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -302,14 +322,21 @@ export function DashboardOverview() {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    outerRadius={90}
-                    label
+                    innerRadius={52}
+                    outerRadius={88}
+                    paddingAngle={clientBreakdown.length > 1 ? 3 : 0}
+                    startAngle={90}
+                    endAngle={-270}
+                    label={PIE_LABEL}
+                    labelLine={{ strokeWidth: 1 }}
+                    {...CHART_ANIMATION}
                   >
                     {clientBreakdown.map((_, index) => (
                       <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
@@ -329,9 +356,33 @@ export function DashboardOverview() {
                   <YAxis />
                   <Tooltip formatter={(v) => formatCurrency(Number(v ?? 0))} />
                   <Legend />
-                  <Line type="monotone" dataKey="received" stroke="var(--chart-2)" strokeWidth={2} />
-                  <Line type="monotone" dataKey="pending" stroke="var(--chart-3)" strokeWidth={2} />
-                  <Line type="monotone" dataKey="expected" stroke="var(--chart-1)" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="received"
+                    stroke="var(--chart-2)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    {...CHART_ANIMATION}
+                    animationBegin={0}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="pending"
+                    stroke="var(--chart-3)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    {...CHART_ANIMATION}
+                    animationBegin={150}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="expected"
+                    stroke="var(--chart-1)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    {...CHART_ANIMATION}
+                    animationBegin={300}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
@@ -352,14 +403,21 @@ export function DashboardOverview() {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    outerRadius={90}
-                    label
+                    innerRadius={52}
+                    outerRadius={88}
+                    paddingAngle={projectStatus.length > 1 ? 3 : 0}
+                    startAngle={90}
+                    endAngle={-270}
+                    label={PIE_LABEL}
+                    labelLine={{ strokeWidth: 1 }}
+                    {...CHART_ANIMATION}
                   >
                     {projectStatus.map((_, index) => (
                       <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>

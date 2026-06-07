@@ -30,7 +30,7 @@ export function AppLogo({
   );
 
   const wrapperClass = cn(
-    "flex items-center rounded-xl border border-border/80 bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md",
+    "flex items-center rounded-xl border border-border/80 bg-card p-2.5 font-sans shadow-sm transition-shadow hover:shadow-md",
     collapsed ? "justify-center" : "gap-3",
     className
   );

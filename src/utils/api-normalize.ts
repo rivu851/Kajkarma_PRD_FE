@@ -216,9 +216,11 @@ export function normalizeCommunication(raw: Record<string, unknown>) {
 }
 
 export function normalizeWorklog(raw: Record<string, unknown>) {
-  const employee = asPopulated<{ _id: string; full_name: string }>(
-    raw.employee_id as PopulatedRef<{ _id: string; full_name: string }>
-  );
+  const employee =
+    (raw.employee as { _id: string; full_name: string } | null | undefined) ??
+    asPopulated<{ _id: string; full_name: string }>(
+      raw.employee_id as PopulatedRef<{ _id: string; full_name: string }>
+    );
   const project = asPopulated<{ _id: string; project_name: string }>(
     raw.project_id as PopulatedRef<{ _id: string; project_name: string }>
   );

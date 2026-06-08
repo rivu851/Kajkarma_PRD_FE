@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2, Pencil, ChevronDown, ChevronRight, Clock, FileText } from "lucide-react";
+import { Plus, Trash2, Pencil, CheckCircle, ChevronDown, ChevronRight, Clock, FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
   worklogsApi,
@@ -60,16 +60,59 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   blocked: "destructive",
 };
 
+// ─── ElapsedTime ──────────────────────────────────────────────────────────────
+
+function ElapsedTime({
+  startedAt,
+  pausedMinutes,
+  lastPausedAt,
+}: {
+  startedAt?: string;
+  pausedMinutes?: number;
+  lastPausedAt?: string | null;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const isPaused = !!lastPausedAt;
+
+  useEffect(() => {
+    if (isPaused) return;
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [isPaused]);
+
+  if (!startedAt) return <span className="text-muted-foreground">—</span>;
+
+  const pausedMs = (pausedMinutes ?? 0) * 60_000;
+  const refPoint = isPaused ? new Date(lastPausedAt!).getTime() : now;
+  const elapsedMs = Math.max(0, refPoint - new Date(startedAt).getTime() - pausedMs);
+  const h = Math.floor(elapsedMs / 3_600_000);
+  const m = Math.floor((elapsedMs % 3_600_000) / 60_000);
+  const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+
+  return (
+    <span className="flex items-center gap-1.5 text-sm tabular-nums">
+      {label}
+      {isPaused ? (
+        <span className="text-xs text-yellow-500">⏸</span>
+      ) : (
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+      )}
+    </span>
+  );
+}
+
 // ─── ProjectGroup ─────────────────────────────────────────────────────────────
 
 function ProjectGroupCard({
   group,
   onEdit,
   onDelete,
+  onComplete,
 }: {
   group: GroupedWorklogProject;
   onEdit: (w: Worklog) => void;
   onDelete: (id: string) => void;
+  onComplete: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -120,7 +163,17 @@ function ProjectGroupCard({
                     <td className="px-3 py-2 font-medium">{log.task_title}</td>
                     <td className="px-3 py-2 text-muted-foreground">{log.employee?.full_name ?? "—"}</td>
                     <td className="px-3 py-2 text-muted-foreground">{formatDate(log.date)}</td>
-                    <td className="px-3 py-2">{log.time_spent_hours}</td>
+                    <td className="px-3 py-2">
+                      {log.work_status === "completed" ? (
+                        `${log.time_spent_hours} hrs`
+                      ) : (
+                        <ElapsedTime
+                          startedAt={log.started_at}
+                          pausedMinutes={log.paused_duration_minutes}
+                          lastPausedAt={log.last_paused_at}
+                        />
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <Badge variant={STATUS_VARIANT[log.work_status] ?? "outline"}>
                         {formatLabel(log.work_status)}
@@ -128,6 +181,18 @@ function ProjectGroupCard({
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1 justify-end">
+                        <PermissionGate module="worklogs" action="update">
+                          {log.work_status !== "completed" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Mark as complete"
+                              onClick={() => onComplete(log._id)}
+                            >
+                              <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                            </Button>
+                          )}
+                        </PermissionGate>
                         <PermissionGate module="worklogs" action="update">
                           <Button size="sm" variant="ghost" onClick={() => onEdit(log)}>
                             <Pencil className="h-3.5 w-3.5" />
@@ -204,6 +269,15 @@ export default function WorklogsPage() {
     onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => worklogsApi.update(id, { work_status: "completed" }),
+    onSuccess: () => {
+      toast.success("Worklog marked as complete");
+      queryClient.invalidateQueries({ queryKey: ["worklogs"] });
+    },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
+  });
+
   const columns = useMemo<ColumnDef<Worklog>[]>(
     () => [
       { accessorKey: "task_title", header: "Task" },
@@ -223,8 +297,19 @@ export default function WorklogsPage() {
         cell: ({ row }) => formatDate(row.original.date),
       },
       {
-        accessorKey: "time_spent_hours",
+        id: "hours",
         header: "Hours",
+        cell: ({ row }) => {
+          const { work_status, time_spent_hours, started_at, paused_duration_minutes, last_paused_at } = row.original;
+          if (work_status === "completed") return `${time_spent_hours} hrs`;
+          return (
+            <ElapsedTime
+              startedAt={started_at}
+              pausedMinutes={paused_duration_minutes}
+              lastPausedAt={last_paused_at}
+            />
+          );
+        },
       },
       {
         accessorKey: "work_status",
@@ -241,6 +326,18 @@ export default function WorklogsPage() {
         cell: ({ row }) => (
           <div className="flex gap-1">
             <PermissionGate module="worklogs" action="update">
+              {row.original.work_status !== "completed" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Mark as complete"
+                  onClick={() => completeMutation.mutate(row.original._id)}
+                >
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                </Button>
+              )}
+            </PermissionGate>
+            <PermissionGate module="worklogs" action="update">
               <Button size="sm" variant="ghost" onClick={() => setEditingWorklog(row.original)}>
                 <Pencil className="h-4 w-4" />
               </Button>
@@ -254,7 +351,7 @@ export default function WorklogsPage() {
         ),
       },
     ],
-    []
+    [completeMutation]
   );
 
   return (
@@ -331,6 +428,7 @@ export default function WorklogsPage() {
                     group={group}
                     onEdit={setEditingWorklog}
                     onDelete={setDeleteId}
+                    onComplete={(id) => completeMutation.mutate(id)}
                   />
                 ))}
               </>
@@ -384,7 +482,6 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
     date: "",
     task_title: "",
     task_description: "",
-    time_spent_hours: "",
     work_status: "in_progress" as Worklog["work_status"],
     remarks: "",
   });
@@ -402,7 +499,6 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
         date: worklog.date ? worklog.date.slice(0, 10) : "",
         task_title: worklog.task_title ?? "",
         task_description: worklog.task_description ?? "",
-        time_spent_hours: worklog.time_spent_hours != null ? String(worklog.time_spent_hours) : "",
         work_status: worklog.work_status ?? "in_progress",
         remarks: worklog.remarks ?? "",
       });
@@ -412,7 +508,6 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
         date: "",
         task_title: "",
         task_description: "",
-        time_spent_hours: "",
         work_status: "in_progress",
         remarks: "",
       });
@@ -426,7 +521,6 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
         date: form.date,
         task_title: form.task_title,
         task_description: form.task_description || undefined,
-        time_spent_hours: Number(form.time_spent_hours),
         work_status: form.work_status,
         remarks: form.remarks || undefined,
       };
@@ -441,7 +535,7 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
     onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
-  const canSubmit = !!form.project_id && !!form.date && !!form.task_title && !!form.time_spent_hours;
+  const canSubmit = !!form.project_id && !!form.date && !!form.task_title;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -468,15 +562,6 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
           <div className="space-y-2">
             <Label>Task Title *</Label>
             <Input value={form.task_title} onChange={(e) => setForm({ ...form, task_title: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Hours *</Label>
-            <Input
-              type="number"
-              step="0.5"
-              value={form.time_spent_hours}
-              onChange={(e) => setForm({ ...form, time_spent_hours: e.target.value })}
-            />
           </div>
           <div className="space-y-2">
             <Label>Status</Label>

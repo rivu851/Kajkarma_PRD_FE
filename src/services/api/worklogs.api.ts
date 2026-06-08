@@ -33,6 +33,10 @@ export interface Worklog {
   time_spent_hours: number;
   work_status: WorkStatus;
   remarks?: string;
+  started_at?: string;
+  completed_at?: string | null;
+  paused_duration_minutes?: number;
+  last_paused_at?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -53,7 +57,6 @@ export interface CreateWorklogPayload {
   project_id: string;
   task_title: string;
   task_description?: string;
-  time_spent_hours: number;
   work_status?: WorkStatus;
   remarks?: string;
 }

@@ -18,6 +18,7 @@ export const ROUTES = {
   subscriptions: "/dashboard/subscriptions",
   reports: "/dashboard/reports",
   reminders: "/dashboard/reminders",
+  attendance: "/dashboard/attendance",
 } as const;
 
 export const PUBLIC_ROUTES = [ROUTES.login, ROUTES.forgotPassword];

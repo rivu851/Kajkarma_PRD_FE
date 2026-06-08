@@ -3,9 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronDown, ChevronRight, Clock, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { worklogsApi, type Worklog, type CreateWorklogPayload } from "@/services/api/worklogs.api";
+import {
+  worklogsApi,
+  type Worklog,
+  type CreateWorklogPayload,
+  type GroupedWorklogProject,
+} from "@/services/api/worklogs.api";
 import { projectsApi } from "@/services/api/projects.api";
 import { getApiErrorMessage } from "@/services/api/axios";
 import { WORK_STATUSES } from "@/constants/enums";
@@ -16,6 +21,8 @@ import { DataTable } from "@/components/tables/data-table";
 import { PaginationControls } from "@/components/tables/pagination-controls";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -42,25 +49,149 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, formatLabel } from "@/utils/format";
+
+type ViewMode = "table" | "grouped";
+
+const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  completed: "default",
+  in_progress: "secondary",
+  blocked: "destructive",
+};
+
+// ─── ProjectGroup ─────────────────────────────────────────────────────────────
+
+function ProjectGroupCard({
+  group,
+  onEdit,
+  onDelete,
+}: {
+  group: GroupedWorklogProject;
+  onEdit: (w: Worklog) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Card>
+      <CardHeader
+        className="cursor-pointer select-none py-4"
+        onClick={() => setOpen((p) => !p)}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-muted-foreground">
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </span>
+            <span className="font-semibold truncate">{group.project_name}</span>
+            <Badge variant="outline" className="shrink-0">{formatLabel(group.project_status)}</Badge>
+          </div>
+          <div className="flex items-center gap-4 shrink-0 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {group.total_hours} hrs
+            </span>
+            <span className="flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5" />
+              {group.entries_count} {group.entries_count === 1 ? "entry" : "entries"}
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+
+      {open && (
+        <CardContent className="pt-0">
+          <div className="rounded-md border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Task</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Employee</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Hours</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {group.logs.map((log) => (
+                  <tr key={log._id} className="border-t hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{log.task_title}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{log.employee?.full_name ?? "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{formatDate(log.date)}</td>
+                    <td className="px-3 py-2">{log.time_spent_hours}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={STATUS_VARIANT[log.work_status] ?? "outline"}>
+                        {formatLabel(log.work_status)}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1 justify-end">
+                        <PermissionGate module="worklogs" action="update">
+                          <Button size="sm" variant="ghost" onClick={() => onEdit(log)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </PermissionGate>
+                        <PermissionGate module="worklogs" action="delete">
+                          <Button size="sm" variant="ghost" onClick={() => onDelete(log._id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </PermissionGate>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function GroupedViewSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[1, 2, 3].map((i) => (
+        <Card key={i}>
+          <CardHeader className="py-4">
+            <Skeleton className="h-5 w-64" />
+          </CardHeader>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── WorklogsPage ─────────────────────────────────────────────────────────────
 
 export default function WorklogsPage() {
   const queryClient = useQueryClient();
+  const [view, setView] = useState<ViewMode>("grouped");
   const [page, setPage] = useState(1);
   const [workStatus, setWorkStatus] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editingWorklog, setEditingWorklog] = useState<Worklog | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const params = {
-    page,
-    limit: 20,
+  const filterParams = {
     work_status: workStatus !== "all" ? (workStatus as Worklog["work_status"]) : undefined,
   };
 
+  const tableParams = { ...filterParams, page, limit: 20 };
+
   const { data, isLoading } = useQuery({
-    queryKey: ["worklogs", params],
-    queryFn: () => worklogsApi.getAll(params),
+    queryKey: ["worklogs", tableParams],
+    queryFn: () => worklogsApi.getAll(tableParams),
+    enabled: view === "table",
+  });
+
+  const { data: groupedData, isLoading: groupedLoading } = useQuery({
+    queryKey: ["worklogs", "grouped", filterParams],
+    queryFn: () => worklogsApi.getGrouped(filterParams),
+    enabled: view === "grouped",
   });
 
   const deleteMutation = useMutation({
@@ -98,7 +229,11 @@ export default function WorklogsPage() {
       {
         accessorKey: "work_status",
         header: "Status",
-        cell: ({ row }) => <Badge>{formatLabel(row.original.work_status)}</Badge>,
+        cell: ({ row }) => (
+          <Badge variant={STATUS_VARIANT[row.original.work_status] ?? "outline"}>
+            {formatLabel(row.original.work_status)}
+          </Badge>
+        ),
       },
       {
         id: "actions",
@@ -138,23 +273,70 @@ export default function WorklogsPage() {
           }
         />
 
-        <Select value={workStatus} onValueChange={(v) => { setWorkStatus(v ?? "all"); setPage(1); }}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {WORK_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{formatLabel(s)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
+            <TabsList>
+              <TabsTrigger value="table">Table</TabsTrigger>
+              <TabsTrigger value="grouped">By Project</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <DataTable columns={columns} data={data?.data ?? []} isLoading={isLoading} exportFileName="worklogs" />
-        <PaginationControls
-          page={data?.page ?? 1}
-          totalPages={data?.totalPages ?? 1}
-          total={data?.total}
-          onPageChange={setPage}
-        />
+          <Select
+            value={workStatus}
+            onValueChange={(v) => { setWorkStatus(v ?? "all"); setPage(1); }}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {WORK_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>{formatLabel(s)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {view === "table" && (
+          <>
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              isLoading={isLoading}
+              exportFileName="worklogs"
+            />
+            <PaginationControls
+              page={data?.page ?? 1}
+              totalPages={data?.totalPages ?? 1}
+              total={data?.total}
+              onPageChange={setPage}
+            />
+          </>
+        )}
+
+        {view === "grouped" && (
+          <div className="space-y-3">
+            {groupedLoading ? (
+              <GroupedViewSkeleton />
+            ) : !groupedData?.data.length ? (
+              <div className="py-16 text-center text-muted-foreground">No worklogs found.</div>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {groupedData.total_projects} project{groupedData.total_projects !== 1 ? "s" : ""}
+                </p>
+                {groupedData.data.map((group) => (
+                  <ProjectGroupCard
+                    key={group.project_id}
+                    group={group}
+                    onEdit={setEditingWorklog}
+                    onDelete={setDeleteId}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <WorklogFormDialog open={formOpen} onOpenChange={setFormOpen} />
@@ -172,7 +354,10 @@ export default function WorklogsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteId && deleteMutation.mutate(deleteId)} disabled={deleteMutation.isPending}>
+            <AlertDialogAction
+              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
+              disabled={deleteMutation.isPending}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -181,6 +366,8 @@ export default function WorklogsPage() {
     </ProtectedRoute>
   );
 }
+
+// ─── WorklogFormDialog ────────────────────────────────────────────────────────
 
 interface WorklogFormDialogProps {
   open: boolean;
@@ -220,7 +407,15 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
         remarks: worklog.remarks ?? "",
       });
     } else if (!open) {
-      setForm({ project_id: "", date: "", task_title: "", task_description: "", time_spent_hours: "", work_status: "in_progress", remarks: "" });
+      setForm({
+        project_id: "",
+        date: "",
+        task_title: "",
+        task_description: "",
+        time_spent_hours: "",
+        work_status: "in_progress",
+        remarks: "",
+      });
     }
   }, [open, worklog]);
 
@@ -276,11 +471,19 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
           </div>
           <div className="space-y-2">
             <Label>Hours *</Label>
-            <Input type="number" step="0.5" value={form.time_spent_hours} onChange={(e) => setForm({ ...form, time_spent_hours: e.target.value })} />
+            <Input
+              type="number"
+              step="0.5"
+              value={form.time_spent_hours}
+              onChange={(e) => setForm({ ...form, time_spent_hours: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>Status</Label>
-            <Select value={form.work_status} onValueChange={(v) => v && setForm({ ...form, work_status: v as Worklog["work_status"] })}>
+            <Select
+              value={form.work_status}
+              onValueChange={(v) => v && setForm({ ...form, work_status: v as Worklog["work_status"] })}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {WORK_STATUSES.map((s) => (
@@ -291,7 +494,10 @@ function WorklogFormDialog({ open, onOpenChange, worklog }: WorklogFormDialogPro
           </div>
           <div className="space-y-2">
             <Label>Description</Label>
-            <Textarea value={form.task_description} onChange={(e) => setForm({ ...form, task_description: e.target.value })} />
+            <Textarea
+              value={form.task_description}
+              onChange={(e) => setForm({ ...form, task_description: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>Remarks</Label>

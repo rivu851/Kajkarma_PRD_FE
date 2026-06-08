@@ -312,6 +312,22 @@ export function normalizeReport(raw: Record<string, unknown>) {
   };
 }
 
+export function normalizeAttendance(raw: Record<string, unknown>) {
+  const employee = asPopulated<{ _id: string; full_name: string }>(
+    raw.employee_id as PopulatedRef<{ _id: string; full_name: string }>
+  );
+
+  return {
+    ...(raw as object),
+    employee_id: refId(raw.employee_id as PopulatedRef<{ _id: string }>) ?? "",
+    employee: employee ? { _id: employee._id, full_name: employee.full_name } : undefined,
+    sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
+    total_minutes: typeof raw.total_minutes === "number" ? raw.total_minutes : 0,
+    is_checked_in: raw.is_checked_in === true,
+    ...timestamps(raw),
+  };
+}
+
 export function normalizeRole(raw: Record<string, unknown>): Role {
   return {
     ...(raw as unknown as Role),

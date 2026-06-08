@@ -17,6 +17,7 @@ import {
   Repeat,
   FileText,
   Bell,
+  UserCheck,
 } from "lucide-react";
 import { ROUTES } from "./routes";
 import type { ModuleName } from "@/types/role.types";
@@ -41,6 +42,7 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { title: "Projects", href: ROUTES.projects, icon: FolderKanban, module: "projects" },
   { title: "Employees", href: ROUTES.employees, icon: UserCircle, module: "employees" },
   { title: "Worklogs", href: ROUTES.worklogs, icon: Clock, module: "worklogs" },
+  { title: "Attendance", href: ROUTES.attendance, icon: UserCheck, module: "attendance" },
   { title: "Salaries", href: ROUTES.salaries, icon: Wallet, module: "salary" },
   { title: "Revenue", href: ROUTES.revenues, icon: TrendingUp, module: "revenue" },
   { title: "Payments", href: ROUTES.payments, icon: CreditCard, module: "payments" },

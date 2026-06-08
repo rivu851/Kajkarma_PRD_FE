@@ -26,7 +26,8 @@ export type ModuleName =
   | "reports"
   | "subscriptions"
   | "dashboard"
-  | "forecasting";
+  | "forecasting"
+  | "attendance";
 
 export interface ModulePermissions {
   read: boolean;

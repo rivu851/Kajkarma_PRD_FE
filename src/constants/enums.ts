@@ -178,4 +178,5 @@ export const MODULES = [
   "subscriptions",
   "dashboard",
   "forecasting",
+  "attendance",
 ] as const;

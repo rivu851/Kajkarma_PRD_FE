@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
+import { Plus, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { salariesApi } from "@/services/api/salaries.api";
 import { employeesApi } from "@/services/api/employees.api";
@@ -51,11 +51,11 @@ const MONTHS = [
 ];
 
 export default function SalariesPage() {
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [payId, setPayId] = useState<string | null>(null);
+  const [adjustSalary, setAdjustSalary] = useState<Salary | null>(null);
 
   const params = {
     page,
@@ -89,9 +89,29 @@ export default function SalariesPage() {
         cell: ({ row }) => formatCurrency(row.original.base_salary),
       },
       {
+        id: "bonus",
+        header: "Bonus",
+        cell: ({ row }) =>
+          row.original.bonus ? (
+            <span className="text-green-600">+{formatCurrency(row.original.bonus)}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "deductions",
+        header: "Deductions",
+        cell: ({ row }) =>
+          row.original.deductions ? (
+            <span className="text-destructive">−{formatCurrency(row.original.deductions)}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
         accessorKey: "net_salary",
         header: "Net",
-        cell: ({ row }) => formatCurrency(row.original.net_salary),
+        cell: ({ row }) => <span className="font-medium">{formatCurrency(row.original.net_salary)}</span>,
       },
       {
         accessorKey: "status",
@@ -106,14 +126,27 @@ export default function SalariesPage() {
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) =>
-          row.original.status === "pending" ? (
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1">
             <PermissionGate module="salary" action="update">
-              <Button size="sm" variant="outline" onClick={() => setPayId(row.original._id)}>
-                Pay
+              <Button
+                size="sm"
+                variant="ghost"
+                title="Adjust bonus / deductions"
+                onClick={() => setAdjustSalary(row.original)}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
               </Button>
             </PermissionGate>
-          ) : null,
+            {row.original.status === "pending" && (
+              <PermissionGate module="salary" action="update">
+                <Button size="sm" variant="outline" onClick={() => setPayId(row.original._id)}>
+                  Pay
+                </Button>
+              </PermissionGate>
+            )}
+          </div>
+        ),
       },
     ],
     []
@@ -156,6 +189,7 @@ export default function SalariesPage() {
 
       <SalaryFormDialog open={formOpen} onOpenChange={setFormOpen} />
       <PaySalaryDialog salaryId={payId} onClose={() => setPayId(null)} />
+      <AdjustSalaryDialog salary={adjustSalary} onClose={() => setAdjustSalary(null)} />
     </ProtectedRoute>
   );
 }
@@ -261,6 +295,139 @@ function SalaryFormDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     </Dialog>
   );
 }
+
+// ─── AdjustSalaryDialog ───────────────────────────────────────────────────────
+
+function AdjustSalaryDialog({
+  salary,
+  onClose,
+}: {
+  salary: Salary | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [bonus, setBonus] = useState("");
+  const [deductions, setDeductions] = useState("");
+
+  const month = MONTHS.find((m) => m.value === salary?.month)?.label ?? salary?.month;
+  const bonusNum = Number(bonus) || 0;
+  const deductionsNum = Number(deductions) || 0;
+  const previewNet = (salary?.base_salary ?? 0) + bonusNum - deductionsNum;
+
+  // Sync form fields whenever a different salary entry is opened
+  useEffect(() => {
+    if (salary) {
+      setBonus(salary.bonus != null ? String(salary.bonus) : "");
+      setDeductions(salary.deductions != null ? String(salary.deductions) : "");
+    }
+  }, [salary?._id]);
+
+  const handleOpenChange = (open: boolean) => {
+    if (!open) onClose();
+  };
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      salariesApi.update(salary!._id, {
+        bonus: bonusNum > 0 ? bonusNum : undefined,
+        deductions: deductionsNum > 0 ? deductionsNum : undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Salary adjustments saved");
+      queryClient.invalidateQueries({ queryKey: ["salaries"] });
+      onClose();
+    },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
+  });
+
+  return (
+    <Dialog open={!!salary} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Adjust Bonus & Deductions</DialogTitle>
+        </DialogHeader>
+
+        {salary && (
+          <div className="space-y-5">
+            {/* Context */}
+            <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Employee</span>
+                <span className="font-medium">{salary.employee?.full_name ?? "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Period</span>
+                <span className="font-medium">{month} {salary.year}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Base Salary</span>
+                <span className="font-medium">{formatCurrency(salary.base_salary)}</span>
+              </div>
+            </div>
+
+            {/* Inputs */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Bonus</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={bonus}
+                  onChange={(e) => setBonus(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Deductions</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={deductions}
+                  onChange={(e) => setDeductions(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Net preview */}
+            <div className="rounded-lg border px-4 py-3 text-sm space-y-1.5">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Base</span>
+                <span>{formatCurrency(salary.base_salary)}</span>
+              </div>
+              {bonusNum > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>+ Bonus</span>
+                  <span>+{formatCurrency(bonusNum)}</span>
+                </div>
+              )}
+              {deductionsNum > 0 && (
+                <div className="flex justify-between text-destructive">
+                  <span>− Deductions</span>
+                  <span>−{formatCurrency(deductionsNum)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t pt-2 font-semibold">
+                <span>Net Salary</span>
+                <span>{formatCurrency(previewNet)}</span>
+              </div>
+            </div>
+
+            <Button
+              className="w-full"
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate()}
+            >
+              {mutation.isPending ? "Saving..." : "Save Adjustments"}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── PaySalaryDialog ──────────────────────────────────────────────────────────
 
 function PaySalaryDialog({ salaryId, onClose }: { salaryId: string | null; onClose: () => void }) {
   const queryClient = useQueryClient();

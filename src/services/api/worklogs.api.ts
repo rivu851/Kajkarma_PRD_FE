@@ -3,6 +3,20 @@ import { normalizePaginated, normalizeWorklog } from "@/utils/api-normalize";
 import type { ApiResponse, PaginatedData } from "@/types/api.types";
 import type { WORK_STATUSES } from "@/constants/enums";
 
+export interface GroupedWorklogProject {
+  project_id: string;
+  project_name: string;
+  project_status: string;
+  total_hours: number;
+  entries_count: number;
+  logs: Worklog[];
+}
+
+export interface GroupedWorklogsResponse {
+  data: GroupedWorklogProject[];
+  total_projects: number;
+}
+
 const asRecord = (value: unknown) => value as Record<string, unknown>;
 
 export type WorkStatus = (typeof WORK_STATUSES)[number];
@@ -72,5 +86,22 @@ export const worklogsApi = {
       `/worklogs/${id}`
     );
     return data.data;
+  },
+
+  getGrouped: async (params?: Omit<WorklogQueryParams, "page" | "limit">) => {
+    const { data } = await apiClient.get<ApiResponse<GroupedWorklogsResponse>>(
+      "/worklogs/grouped",
+      { params }
+    );
+    const raw = data.data;
+    return {
+      total_projects: raw.total_projects,
+      data: raw.data.map((group) => ({
+        ...group,
+        logs: group.logs.map((log) =>
+          normalizeWorklog(log as unknown as Record<string, unknown>) as Worklog
+        ),
+      })),
+    } as GroupedWorklogsResponse;
   },
 };
